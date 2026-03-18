@@ -1,15 +1,15 @@
 Summary: An HTTP and WebDAV client library
 Name: neon
-Version: 0.30.0
-Release: 3%{?dist}
+Version: 0.30.2
+Release: 6%{?dist}
 License: LGPLv2+
 Group: System Environment/Libraries
 URL: http://www.webdav.org/neon/
 Source0: http://www.webdav.org/neon/neon-%{version}.tar.gz
 Patch0: neon-0.27.0-multilib.patch
-BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-BuildRequires: expat-devel, gnutls-devel, zlib-devel, krb5-devel, libproxy-devel
-BuildRequires: pkgconfig, pakchois-devel
+Patch1: neon-0.30.2-warnings.patch
+BuildRequires: expat-devel, openssl-devel, zlib-devel, krb5-devel, libproxy-devel
+BuildRequires: pkgconfig, pakchois-devel, gcc
 Requires: ca-certificates
 
 %description
@@ -22,7 +22,7 @@ Kerberos authentication, and has complete SSL support.
 %package devel
 Summary: Development libraries and C header files for the neon library
 Group: Development/Libraries
-Requires: neon = %{version}-%{release}, gnutls-devel, zlib-devel, expat-devel
+Requires: neon = %{version}-%{release}, openssl-devel, zlib-devel, expat-devel
 Requires: pkgconfig
 # Documentation is GPLv2+
 License: LGPLv2+ and GPLv2+
@@ -33,14 +33,16 @@ The development library for the C language HTTP and WebDAV client library.
 %prep
 %setup -q
 %patch0 -p1 -b .multilib
+%patch1 -p0 -b .warnings
+
+# prevent installation of HTML docs
+sed -ibak '/^install-docs/s/install-html//' Makefile.in
 
 %build
 export CC="%{__cc} -pthread"
-# Use standard system CA bundle:
-%define cabundle %{_sysconfdir}/pki/tls/certs/ca-bundle.crt
 %configure --with-expat --enable-shared --disable-static \
-        --enable-warnings --with-ca-bundle=%{cabundle} \
-        --with-ssl=gnutls --enable-threadsafe-ssl=posix \
+        --enable-warnings \
+        --with-ssl=openssl --enable-threadsafe-ssl=posix \
         --with-libproxy
 make %{?_smp_mflags}
 
@@ -52,9 +54,6 @@ sed -ri "/^dependency_libs/{s,-l[^ ']*,,g}" \
       $RPM_BUILD_ROOT%{_libdir}/libneon.la
 
 %find_lang %{name}
-
-%clean
-rm -rf $RPM_BUILD_ROOT
 
 %post -p /sbin/ldconfig
 
@@ -76,11 +75,44 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/*.so
 
 %changelog
-* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 0.30.0-3
-- Mass rebuild 2014-01-24
+* Tue Dec 11 2018 Joe Orton <jorton@redhat.com> - 0.30.2-6
+- fix covscan warnings (#1602627)
 
-* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 0.30.0-2
-- Mass rebuild 2013-12-27
+* Thu Feb 08 2018 Fedora Release Engineering <releng@fedoraproject.org> - 0.30.2-5
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_28_Mass_Rebuild
+
+* Thu Aug 03 2017 Fedora Release Engineering <releng@fedoraproject.org> - 0.30.2-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Binutils_Mass_Rebuild
+
+* Wed Jul 26 2017 Fedora Release Engineering <releng@fedoraproject.org> - 0.30.2-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Mass_Rebuild
+
+* Fri Feb 10 2017 Fedora Release Engineering <releng@fedoraproject.org> - 0.30.2-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_26_Mass_Rebuild
+
+* Fri Sep 30 2016 Joe Orton <jorton@redhat.com> - 0.30.2-1
+- update to 0.30.2
+
+* Thu Feb 04 2016 Fedora Release Engineering <releng@fedoraproject.org> - 0.30.1-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_24_Mass_Rebuild
+
+* Wed Jun 17 2015 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.30.1-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_23_Mass_Rebuild
+
+* Tue Sep 23 2014 Joe Orton <jorton@redhat.com> - 0.30.1-2
+- switch to OpenSSL
+
+* Tue Sep 23 2014 Joe Orton <jorton@redhat.com> - 0.30.1-1
+- update to 0.30.1
+
+* Sun Aug 17 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.30.0-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_22_Mass_Rebuild
+
+* Sat Jun 07 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.30.0-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_Mass_Rebuild
+
+* Wed Jul 31 2013 Joe Orton <jorton@redhat.com> - 0.30.0-2
+- prevent installation of HTML docs
 
 * Wed Jul 31 2013 Joe Orton <jorton@redhat.com> - 0.30.0-1
 - update to 0.30.0 (#983563, #926212)
