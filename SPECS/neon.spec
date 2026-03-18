@@ -1,7 +1,7 @@
 Summary: An HTTP and WebDAV client library
 Name: neon
 Version: 0.30.2
-Release: 6%{?dist}
+Release: 6.1%{?dist}
 License: LGPLv2+
 Group: System Environment/Libraries
 URL: http://www.webdav.org/neon/
@@ -32,8 +32,8 @@ The development library for the C language HTTP and WebDAV client library.
 
 %prep
 %setup -q
-%patch0 -p1 -b .multilib
-%patch1 -p0 -b .warnings
+%patch -P0 -p1 -b .multilib
+%patch -P1 -p0 -b .warnings
 
 # prevent installation of HTML docs
 sed -ibak '/^install-docs/s/install-html//' Makefile.in
@@ -75,6 +75,10 @@ sed -ri "/^dependency_libs/{s,-l[^ ']*,,g}" \
 %{_libdir}/*.so
 
 %changelog
+* Wed Jul 15 2026 Philippe Coval <philippe.coval@vates.tech> - 0.30.2-6.1
+- Rebuild on updated gnutls
+- Update obsolete %%patch macro
+
 * Tue Dec 11 2018 Joe Orton <jorton@redhat.com> - 0.30.2-6
 - fix covscan warnings (#1602627)
 
