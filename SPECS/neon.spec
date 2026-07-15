@@ -1,7 +1,7 @@
 Summary: An HTTP and WebDAV client library
 Name: neon
 Version: 0.30.2
-Release: 6.1%{?dist}
+Release: 6.1~XCPNG3059.5%{?dist}
 License: LGPLv2+
 Group: System Environment/Libraries
 URL: http://www.webdav.org/neon/
