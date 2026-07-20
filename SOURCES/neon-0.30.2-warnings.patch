@@ -1,0 +1,284 @@
+--- test/request.c	(.../tags/0.30.2)	(revision 2045)
++++ test/request.c	(.../branches/0.30.x)	(revision 2045)
+@@ -902,8 +902,6 @@
+     ONREQ(ne_request_dispatch(req));
+ 
+     while ((cursor = ne_response_header_iterate(req, cursor, &name, &value))) {
+-        n = -1;
+-
+         ONV(strncmp(name, "x-", 2) || strncmp(value, "Y-", 2)
+             || strcmp(name + 2, value + 2)
+             || (n = atoi(name + 2)) >= MANY_HEADERS
+@@ -2358,6 +2356,21 @@
+     return await_server();
+ }
+ 
++static int safe_flags(void)
++{
++    ne_session *sess = ne_session_create("http", "localhost", 80);
++    ne_request *req = ne_request_create(sess, "GET", "/");
++
++    ne_set_request_flag(req, NE_REQFLAG_LAST, 0xAAAAAAAA);
++
++    ONN("flags array bound check failed", ne_get_session(req) != sess);
++
++    ne_request_destroy(req);
++    ne_session_destroy(sess);
++
++    return OK;
++}
++
+ /* TODO: test that ne_set_notifier(, NULL, NULL) DTRT too. */
+ 
+ ne_test tests[] = {
+@@ -2451,5 +2464,6 @@
+     T(socks_fail),
+     T(fail_lookup),
+     T(fail_double_lookup),
++    T(safe_flags),
+     T(NULL)
+ };
+--- test/lock.c	(.../tags/0.30.2)	(revision 2045)
++++ test/lock.c	(.../branches/0.30.x)	(revision 2045)
+@@ -73,11 +73,13 @@
+ 			   const char *token_href)
+ {
+     static char buf[BUFSIZ];
+-    sprintf(buf, 
+-	    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+-	    "<D:prop xmlns:D=\"DAV:\">"
+-	    "<D:lockdiscovery>%s</D:lockdiscovery></D:prop>\n",
+-	    activelock(scope, depth, owner, timeout, token_href));
++
++    ne_snprintf(buf, sizeof buf,
++                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
++                "<D:prop xmlns:D=\"DAV:\">"
++                "<D:lockdiscovery>%s</D:lockdiscovery></D:prop>\n",
++                activelock(scope, depth, owner, timeout, token_href));
++
+     return buf;
+ }
+ 
+--- test/string-tests.c	(.../tags/0.30.2)	(revision 2045)
++++ test/string-tests.c	(.../branches/0.30.x)	(revision 2045)
+@@ -320,7 +320,7 @@
+ {
+     char expect[200], actual[200];
+     
+-    strncpy(expect, strerror(ENOENT), sizeof(expect));
++    strncpy(expect, strerror(ENOENT), sizeof(expect)-1);
+     ONN("ne_strerror did not return passed-in buffer",
+ 	ne_strerror(ENOENT, actual, sizeof(actual)) != actual);
+     
+--- test/util-tests.c	(.../tags/0.30.2)	(revision 2045)
++++ test/util-tests.c	(.../branches/0.30.x)	(revision 2045)
+@@ -203,18 +203,24 @@
+     return OK;
+ }
+ 
+-/* trigger segfaults in ne_rfc1036_parse() in <=0.24.5. */
+-static int regress_dates(void)
++#define BAD_DATE(format, result) \
++    ONN(format " date parse must fail", result != -1)
++
++/* Test for bad dates; trigger segfaults in ne_rfc1036_parse() in
++ * <=0.24.5. */
++static int bad_dates(void)
+ {
+     static const char *dates[] = {
+-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
++        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
++        "Friday, 08-Jun-01",
+     };
+     size_t n;
+     
+     for (n = 0; n < sizeof(dates)/sizeof(dates[0]); n++) {
+-        ne_rfc1036_parse(dates[n]);
+-        ne_iso8601_parse(dates[n]);
+-        ne_rfc1123_parse(dates[n]);
++        BAD_DATE("rfc1036", ne_rfc1036_parse(dates[n]));
++        BAD_DATE("iso8601", ne_iso8601_parse(dates[n]));
++        BAD_DATE("rfc1123", ne_rfc1123_parse(dates[n]));
++        BAD_DATE("asctime", ne_asctime_parse(dates[n]));
+     }
+ 
+     return OK;
+@@ -303,7 +309,7 @@
+     T(md5),
+     T(md5_alignment),
+     T(parse_dates),
+-    T(regress_dates),
++    T(bad_dates),
+     T(versioning),
+     T(version_string),
+     T(support),
+--- src/ne_dates.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_dates.c	(.../branches/0.30.x)	(revision 2045)
+@@ -171,11 +171,12 @@
+     int n;
+     time_t result;
+     
+-/*  it goes: Sun, 06 Nov 1994 08:49:37 GMT */
+-    n = sscanf(date, RFC1123_FORMAT,
+-	    wkday, &gmt.tm_mday, mon, &gmt.tm_year, &gmt.tm_hour,
+-	    &gmt.tm_min, &gmt.tm_sec);
+-    /* Is it portable to check n==7 here? */
++    /* it goes: Sun, 06 Nov 1994 08:49:37 GMT */
++    if (sscanf(date, RFC1123_FORMAT,
++               wkday, &gmt.tm_mday, mon, &gmt.tm_year, &gmt.tm_hour,
++               &gmt.tm_min, &gmt.tm_sec) != 7)
++        return (time_t) -1;
++
+     gmt.tm_year -= 1900;
+     for (n=0; n<12; n++)
+ 	if (strcmp(mon, short_months[n]) == 0)
+@@ -204,7 +205,6 @@
+ 	return (time_t)-1;
+     }
+ 
+-    /* portable to check n here? */
+     for (n=0; n<12; n++)
+ 	if (strcmp(mon, short_months[n]) == 0)
+ 	    break;
+@@ -232,11 +232,12 @@
+     char wkday[4], mon[4];
+     time_t result;
+ 
+-    n = sscanf(date, ASCTIME_FORMAT,
+-		wkday, mon, &gmt.tm_mday, 
+-		&gmt.tm_hour, &gmt.tm_min, &gmt.tm_sec,
+-		&gmt.tm_year);
+-    /* portable to check n here? */
++    if (sscanf(date, ASCTIME_FORMAT,
++               wkday, mon, &gmt.tm_mday, 
++               &gmt.tm_hour, &gmt.tm_min, &gmt.tm_sec,
++               &gmt.tm_year) != 7)
++        return (time_t)-1;
++
+     for (n=0; n<12; n++)
+ 	if (strcmp(mon, short_months[n]) == 0)
+ 	    break;
+--- src/ne_locks.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_locks.c	(.../branches/0.30.x)	(revision 2045)
+@@ -32,6 +32,7 @@
+ #ifdef HAVE_LIMITS_H
+ #include <limits.h>
+ #endif
++#include <assert.h>
+ 
+ #include <ctype.h> /* for isdigit() */
+ 
+@@ -332,6 +333,9 @@
+     for (item = store->locks; item != NULL; item = item->next)
+ 	if (item->lock == lock)
+ 	    break;
++
++    /* API condition that lock is present in the store. */
++    assert(item);
+     
+     if (item->prev != NULL) {
+ 	item->prev->next = item->next;
+--- src/ne_session.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_session.c	(.../branches/0.30.x)	(revision 2045)
+@@ -569,7 +569,8 @@
+     };
+     int n, flag = 0;
+ 
+-    strcpy(sess->error, _("Server certificate verification failed: "));
++    ne_strnzcpy(sess->error, _("Server certificate verification failed: "),
++                sizeof sess->error);
+ 
+     for (n = 0; reasons[n].bit; n++) {
+ 	if (failures & reasons[n].bit) {
+--- src/ne_xml.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_xml.c	(.../branches/0.30.x)	(revision 2045)
+@@ -576,7 +576,7 @@
+         if (p->bom_pos == 0) {
+             p->bom_pos = 3; /* no BOM */
+         } else if (p->bom_pos > 0 && p->bom_pos < 3) {
+-            strcpy(p->error, _("Invalid Byte Order Mark"));
++            ne_strnzcpy(p->error, _("Invalid Byte Order Mark"), sizeof p->error);
+             return p->failure = 1;
+         }
+     }
+--- src/ne_request.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_request.c	(.../branches/0.30.x)	(revision 2045)
+@@ -329,7 +329,7 @@
+                 /* errno was set */
+                 ne_strerror(errno, err, sizeof err);
+             } else {
+-                strcpy(err, _("offset invalid"));
++                ne_strnzcpy(err, _("offset invalid"), sizeof err);
+             }
+             ne_snprintf(offstr, sizeof offstr, "%" FMT_NE_OFF_T,
+                         req->body.file.offset);
+@@ -585,7 +585,7 @@
+ 
+ void ne_set_request_flag(ne_request *req, ne_request_flag flag, int value)
+ {
+-    if (flag < (ne_request_flag)NE_SESSFLAG_LAST) {
++    if (flag < (ne_request_flag)NE_REQFLAG_LAST) {
+         req->flags[flag] = value;
+     }
+ }
+--- src/ne_socket.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_socket.c	(.../branches/0.30.x)	(revision 2045)
+@@ -27,7 +27,7 @@
+ #include "config.h"
+ 
+ #include <sys/types.h>
+-#ifdef HAVE_SYS_UIO_h
++#ifdef HAVE_SYS_UIO_H
+ #include <sys/uio.h> /* writev(2) */
+ #endif
+ #ifdef HAVE_SYS_TIME_H
+--- src/ne_openssl.c	(.../tags/0.30.2)	(revision 2045)
++++ src/ne_openssl.c	(.../branches/0.30.x)	(revision 2045)
+@@ -1130,7 +1130,10 @@
+     return 0;
+ }
+ 
+-#ifdef NE_HAVE_TS_SSL
++#if defined(NE_HAVE_TS_SSL) && OPENSSL_VERSION_NUMBER < 0x10101000L
++/* For OpenSSL 1.1.1 locking callbacks are no longer need at all. */
++#define WITH_OPENSSL_LOCKING (1)
++
+ /* Implementation of locking callbacks to make OpenSSL thread-safe.
+  * If the OpenSSL API was better designed, this wouldn't be necessary.
+  * In OpenSSL releases without CRYPTO_set_idptr_callback, it's not
+@@ -1184,8 +1187,6 @@
+     }
+ }
+ 
+-#endif
+-
+ /* ID_CALLBACK_IS_{NEON,OTHER} evaluate as true if the currently
+  * registered OpenSSL ID callback is the neon function (_NEON), or has
+  * been overwritten by some other app (_OTHER). */
+@@ -1196,6 +1197,8 @@
+ #define ID_CALLBACK_IS_OTHER (CRYPTO_get_id_callback() != NULL)
+ #define ID_CALLBACK_IS_NEON (CRYPTO_get_id_callback() == thread_id_neon)
+ #endif
++        
++#endif /* NE_HAVE_TS_SSL && OPENSSL_VERSION_NUMBER < 1.1.1 */
+ 
+ int ne__ssl_init(void)
+ {
+@@ -1205,7 +1208,7 @@
+     SSL_library_init();
+     OpenSSL_add_all_algorithms();
+ 
+-#ifdef NE_HAVE_TS_SSL
++#ifdef WITH_OPENSSL_LOCKING
+     /* If some other library has already come along and set up the
+      * thread-safety callbacks, then it must be presumed that the
+      * other library will have a longer lifetime in the process than
+@@ -1252,7 +1255,7 @@
+     /* Cannot call ERR_free_strings() etc here in case any other code
+      * in the process using OpenSSL. */
+ 
+-#ifdef NE_HAVE_TS_SSL
++#ifdef WITH_OPENSSL_LOCKING
+     /* Only unregister the callbacks if some *other* library has not
+      * come along in the mean-time and trampled over the callbacks
+      * installed by neon. */
